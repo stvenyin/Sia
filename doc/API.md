@@ -128,8 +128,8 @@ returns the set of constants in use.
   "roottarget": [0,0,0,0,32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   "rootdepth":  [255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255],
 
-  "maxadjustmentup":   "5/2",
-  "maxadjustmentdown": "2/5",
+  "maxtargetadjustmentup":   "5/2",
+  "maxtargetadjustmentdown": "2/5",
 
   "siacoinprecision": "1000000000000000000000000" // hastings per siacoin
 }
@@ -160,6 +160,7 @@ Consensus
 | Route                                                                       | HTTP verb |
 | --------------------------------------------------------------------------- | --------- |
 | [/consensus](#consensus-get)                                                | GET       |
+| [/consensus/blocks](#consensusblocks-get)                                   | GET       |
 | [/consensus/validate/transactionset](#consensusvalidatetransactionset-post) | POST      |
 
 For examples and detailed descriptions of request and response parameters,
@@ -178,6 +179,21 @@ returns information about the consensus set, such as the current block height.
   "target":       [0,0,0,0,0,0,11,48,125,79,116,89,136,74,42,27,5,14,10,31,23,53,226,238,202,219,5,204,38,32,59,165],
   "difficulty":   "1234"
 }
+```
+
+#### /consensus/blocks [GET]
+
+Returns the block for a given id or height.
+
+###### Query String Parameters
+One of the following parameters can be specified.
+```
+// BlockID of the requested block.
+id 
+
+// BlockHeight of the requested block.
+height
+
 ```
 
 #### /consensus/validate/transactionset [POST]
@@ -257,6 +273,7 @@ Host
 | [/host](#host-get)                                                                         | GET       |
 | [/host](#host-post)                                                                        | POST      |
 | [/host/announce](#hostannounce-post)                                                       | POST      |
+| [/host/contracts](#hostcontracts-get)							     | GET	 |
 | [/host/estimatescore](#hostestimatescore-get)                                              | GET       |
 | [/host/storage](#hoststorage-get)                                                          | GET       |
 | [/host/storage/folders/add](#hoststoragefoldersadd-post)                                   | POST      |
@@ -392,11 +409,46 @@ netaddress string // Optional
 standard success or error response. See
 [#standard-responses](#standard-responses).
 
+#### /host/contracts [GET]
+
+gets a list of all contracts from the host database
+
+###### JSON Response [(with comments)](/doc/api/Host.md#json-response-1)
+```javascript
+{
+  "contracts": [
+    {
+      "contractcost":			"1234",		// hastings
+      "datasize":			500000,		// bytes
+      "lockedcollateral":		"1234",		// hastings
+      "obligationid":			"fff48010dcbbd6ba7ffd41bc4b25a3634ee58bbf688d2f06b7d5a0c837304e13",
+      "potentialdownloadrevenue":	"1234",		// hastings
+      "potentialstoragerevenue":	"1234",		// hastings
+      "potentialuploadrevenue":		"1234",		// hastings
+      "riskedcollateral":		"1234",		// hastings
+      "sectorrootscount":		2,
+      "transactionfeesadded":		"1234",		// hastings
+
+      "expirationheight":		123456,		// blocks
+      "negotiationheight":		123456,		// blocks
+      "proofdeadline":			123456,		// blocks
+
+      "obligationstatus":		"obligationFailed",
+      "originconfirmed":		true,
+      "proofconfirmed":			true,
+      "proofconstructed":		true
+      "revisionconfirmed":		false,
+      "revisionconstructed":		false,
+    }
+  ]
+}
+```
+
 #### /host/storage [GET]
 
 gets a list of folders tracked by the host's storage manager.
 
-###### JSON Response [(with comments)](/doc/api/Host.md#json-response-1)
+###### JSON Response [(with comments)](/doc/api/Host.md#json-response-2)
 ```javascript
 {
   "folders": [
@@ -487,7 +539,7 @@ standard success or error response. See
 returns the estimated HostDB score of the host using its current settings,
 combined with the provided settings.
 
-###### JSON Response [(with comments)](/doc/api/Host.md#json-response-2)
+###### JSON Response [(with comments)](/doc/api/Host.md#json-response-3)
 ```javascript
 {
 	"estimatedscore": "123456786786786786786786786742133",
@@ -746,9 +798,11 @@ returns the current settings along with metrics on the renter's spending.
     }
   },
   "financialmetrics": {
-    "contractspending": "1234", // hastings
+    "contractfees":     "1234", // hastings
+    "contractspending": "1234", // hastings (deprecated, now totalallocated)
     "downloadspending": "5678", // hastings
     "storagespending":  "1234", // hastings
+    "totalallocated":   "1234", // hastings
     "uploadspending":   "5678", // hastings
     "unspent":          "1234"  // hastings
   },

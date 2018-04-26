@@ -29,6 +29,14 @@ type updateSetHeader struct {
 	Header contractHeader
 }
 
+// v132UpdateHeader was introduced due to backwards compatibility reasons after
+// changing the format of the contractHeader. It contains the legacy
+// v132ContractHeader.
+type v132UpdateSetHeader struct {
+	ID     types.FileContractID
+	Header v132ContractHeader
+}
+
 type updateSetRoot struct {
 	ID    types.FileContractID
 	Root  crypto.Hash
@@ -36,6 +44,29 @@ type updateSetRoot struct {
 }
 
 type contractHeader struct {
+	// transaction is the signed transaction containing the most recent
+	// revision of the file contract.
+	Transaction types.Transaction
+
+	// secretKey is the key used by the renter to sign the file contract
+	// transaction.
+	SecretKey crypto.SecretKey
+
+	// Same as modules.RenterContract.
+	StartHeight      types.BlockHeight
+	DownloadSpending types.Currency
+	StorageSpending  types.Currency
+	UploadSpending   types.Currency
+	TotalCost        types.Currency
+	ContractFee      types.Currency
+	TxnFee           types.Currency
+	SiafundFee       types.Currency
+	Utility          modules.ContractUtility
+}
+
+// v132ContractHeader is a contractHeader without the Utility field. This field
+// was added after v132 to be able to persist contract utilities.
+type v132ContractHeader struct {
 	// transaction is the signed transaction containing the most recent
 	// revision of the file contract.
 	Transaction types.Transaction
@@ -128,7 +159,51 @@ func (c *SafeContract) Metadata() modules.RenterContract {
 		ContractFee:      h.ContractFee,
 		TxnFee:           h.TxnFee,
 		SiafundFee:       h.SiafundFee,
+		Utility:          h.Utility,
 	}
+}
+
+// UpdateUtility updates the utility field of a contract.
+func (c *SafeContract) UpdateUtility(utility modules.ContractUtility) error {
+	// Get current header
+	c.headerMu.Lock()
+	newHeader := c.header
+	c.headerMu.Unlock()
+
+	// Construct new header
+	newHeader.Utility = utility
+
+	// Record the intent to change the header in the wal.
+	t, err := c.wal.NewTransaction([]writeaheadlog.Update{
+		c.makeUpdateSetHeader(newHeader),
+	})
+	if err != nil {
+		return err
+	}
+	// Signal that the setup is completed.
+	if err := <-t.SignalSetupComplete(); err != nil {
+		return err
+	}
+	// Apply the change.
+	if err := c.applySetHeader(newHeader); err != nil {
+		return err
+	}
+	// Sync the change to disk.
+	if err := c.f.Sync(); err != nil {
+		return err
+	}
+	// Signal that the update has been applied.
+	if err := t.SignalUpdatesApplied(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Utility returns the contract utility for the contract.
+func (c *SafeContract) Utility() modules.ContractUtility {
+	c.headerMu.Lock()
+	defer c.headerMu.Unlock()
+	return c.header.Utility
 }
 
 func (c *SafeContract) makeUpdateSetHeader(h contractHeader) writeaheadlog.Update {
@@ -284,7 +359,7 @@ func (c *SafeContract) commitTxns() error {
 			switch update.Name {
 			case updateNameSetHeader:
 				var u updateSetHeader
-				if err := encoding.Unmarshal(update.Instructions, &u); err != nil {
+				if err := unmarshalHeader(update.Instructions, &u); err != nil {
 					return err
 				}
 				if err := c.applySetHeader(u.Header); err != nil {
@@ -318,7 +393,7 @@ func (c *SafeContract) unappliedHeader() (h contractHeader) {
 		for _, update := range t.Updates {
 			if update.Name == updateNameSetHeader {
 				var u updateSetHeader
-				if err := encoding.Unmarshal(update.Instructions, &u); err != nil {
+				if err := unmarshalHeader(update.Instructions, &u); err != nil {
 					continue
 				}
 				h = u.Header
@@ -365,6 +440,8 @@ func (cs *ContractSet) managedInsertContract(h contractHeader, roots []crypto.Ha
 	return sc.Metadata(), nil
 }
 
+// loadSafeContract loads a contract from disk and adds it to the contractset
+// if it is valid.
 func (cs *ContractSet) loadSafeContract(filename string, walTxns []*writeaheadlog.Transaction) error {
 	f, err := os.OpenFile(filename, os.O_RDWR, 0600)
 	if err != nil {
@@ -403,7 +480,7 @@ func (cs *ContractSet) loadSafeContract(filename string, walTxns []*writeaheadlo
 		switch update := t.Updates[0]; update.Name {
 		case updateNameSetHeader:
 			var u updateSetHeader
-			if err := encoding.Unmarshal(update.Instructions, &u); err != nil {
+			if err := unmarshalHeader(update.Instructions, &u); err != nil {
 				return err
 			}
 			id = u.ID
@@ -541,5 +618,33 @@ func (mrs *MerkleRootSet) UnmarshalJSON(b []byte) error {
 		copy(umrs[i][:], fullBytes[i*crypto.HashSize:(i+1)*crypto.HashSize])
 	}
 	*mrs = umrs
+	return nil
+}
+
+func unmarshalHeader(b []byte, u *updateSetHeader) error {
+	// Try unmarshaling the header.
+	if err := encoding.Unmarshal(b, u); err != nil {
+		// COMPATv132 try unmarshaling the header the old way.
+		var oldHeader v132UpdateSetHeader
+		if err2 := encoding.Unmarshal(b, &oldHeader); err2 != nil {
+			// If unmarshaling the header the old way also doesn't work we
+			// return the original error.
+			return err
+		}
+		// If unmarshaling it the old way was successful we convert it to a new
+		// header.
+		u.Header = contractHeader{
+			Transaction:      oldHeader.Header.Transaction,
+			SecretKey:        oldHeader.Header.SecretKey,
+			StartHeight:      oldHeader.Header.StartHeight,
+			DownloadSpending: oldHeader.Header.DownloadSpending,
+			StorageSpending:  oldHeader.Header.StorageSpending,
+			UploadSpending:   oldHeader.Header.UploadSpending,
+			TotalCost:        oldHeader.Header.TotalCost,
+			ContractFee:      oldHeader.Header.ContractFee,
+			TxnFee:           oldHeader.Header.TxnFee,
+			SiafundFee:       oldHeader.Header.SiafundFee,
+		}
+	}
 	return nil
 }
