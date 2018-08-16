@@ -79,7 +79,8 @@ dev-race:
 
 # release builds and installs release binaries.
 release:
-	GOOS=linux GOBIN= go install -tags='netgo' -a -ldflags='-s -w $(ldflags)' $(pkgs)
+	# GOOS=linux GOBIN= go install -tags='netgo' -a -ldflags='-s -w $(ldflags)' $(pkgs)
+	go install -tags='netgo' -a -ldflags='-s -w $(ldflags)' $(pkgs)
 release-race:
 	go install -race -tags='netgo' -a -ldflags='-s -w $(ldflags)' $(pkgs)
 

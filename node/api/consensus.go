@@ -95,9 +95,11 @@ func (api *API) consensusBlocksHandler(w http.ResponseWriter, req *http.Request,
 	siacoinOutputIDs := make(map[string]types.SiacoinOutputID)
 
 	for _, txn := range b.Transactions {
-		transactionIDs = append(transactionIDs, txn.ID())
+		txid := txn.ID()
+		transactionIDs = append(transactionIDs, txid)
 		for j := range txn.SiacoinOutputs {
-			siacoinOutputIDs[txn.SiacoinOutputs[j].UnlockHash.String()] = txn.SiacoinOutputID(uint64(j))
+			key := fmt.Sprintf("%s_%d",txid,j)
+			siacoinOutputIDs[key] = txn.SiacoinOutputID(uint64(j))
 		}
 	}
 
